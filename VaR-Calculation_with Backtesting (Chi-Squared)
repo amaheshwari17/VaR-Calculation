@@ -219,3 +219,6 @@ main_var(['RELIANCE.NS','HDFCBANK.BO', 'INFY.BO', 'HINDUNILVR.BO'], np.array([.2
 
 
 
+"""
+Historical Simulation is not accurate. For that, I have written another code in this same repository. Kindly refer to that. Thanks!
+"""
