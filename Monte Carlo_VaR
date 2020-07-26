@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Jul 26 17:02:22 2020
+
+@author: aayush
+"""
+
+
+#Import necessary libraries
+import pandas as pd
+from pandas_datareader import data as pdr
+import numpy as np
+import datetime as dt
+
+#Statistical Calculation
+from scipy.stats import norm, chi2
+
+# using EWMA (Exponentially Weighted Moving Average) model
+def ewma_vol(DF, observed_days, decay_factor):
+    """
+    DF type: dataframe(dataframe contains date, Adj-Close-price and Log-return)
+    observed_days type: int(observed days)
+    decay_factor type: float(decay factor)
+    output type: dataframe(dataframe contains date, Adj-Close-price and Log-return and volatilitis)
+    """
+    # set the first vol using root mean square of return
+    DF.loc[(observed_days - 1), 'Volatility'] = np.sqrt(
+        ((DF.loc[:observed_days - 1, 'Log Return'] - 0) ** 2).mean())
+    # calculate vol using EWMA recursive formula
+    for index in range(observed_days, len(DF)):
+        DF.loc[index, 'Volatility'] = np.sqrt(
+            (1 - decay_factor) * DF.loc[index, 'Log Return'] ** 2 + decay_factor * DF.loc[(index - 1), 'Volatility'] ** 2)
+    # drop the rows for null value
+    DF.dropna(inplace=True)
+    DF.reset_index(inplace=True, drop=True)
+
+    return DF
+
+# use random draws from a hypothesized return distribution
+def mc_simulation_var(DF, observed_days, initial_investment, decay_factor, confidence_level):
+    """
+    DF: dataframe(dataframe contains date, Adj-Close-price and Log-return)
+    observed_days type: int(observed days)
+    initial investment type: int(how much capital is invested)
+    decay_factor type: float(decay factor)
+    confidence_level type: float(confidence_level for VaR)
+    output type: dataframe(dataframe contains date, Adj-Close-price and Log-return and mc-simulation-var)
+    """
+    # calling the EWMA volatility function
+    DF = ewma_vol(DF, observed_days, decay_factor)
+
+    # use monte carlo simulation to create the var
+    # calculate the var using the quantile of 1000 simulation
+    for index in range(len(DF)):
+        random_returns = np.random.normal(
+            loc=0, scale=DF.loc[index, 'Volatility'], size=1000)     
+        var_return = np.percentile(                                    
+            random_returns, (1 - confidence_level) * 100) 
+        DF.loc[index, 'VaR'] = DF.loc[index,
+                                          'Adj Close'] * (1 - np.exp(var_return))
+        DF.loc[index, 'VaR for given investment'] = (DF.loc[index, 'VaR']/(DF.loc[index, 'Adj Close']))*initial_investment
+        pd.set_option('display.max_columns', None)
+
+    return DF
+
+# based on a hypothesized return distribution plus a volatility estimate
+def parametric_var(data, observed_days, initial_investment, decay_factor, confidence_level):
+    """
+    DF: dataframe(dataframe contains date, Adj-Close-price and Log-return)
+    observed_days type: int(observed days)
+    initial investment type: int(how much capital is invested)
+    decay_factor type: float(decay factor)
+    confidence_level type: float(confidence_level for VaR)
+    output type: dataframe(dataframe contains date, price, log-return and parametric-var)
+    """
+    # calculate the EWMA volatility
+    DF = ewma_vol(data, observed_days, decay_factor)
+    # use parametric method to create the var
+    DF['VaR'] = DF['Adj Close'] * (1 - np.exp(norm.ppf(
+        1 - confidence_level, loc=0, scale=DF['Volatility'])))
+    DF['VaR for given investment'] = (DF['VaR']/(DF['Adj Close']))*initial_investment
+    pd.set_option('display.max_columns', None)
+
+    return data
+
+
+# based on historical returns over some past observation period
+# no distributional hypothesis
+def historical_var(DF, observed_days, initial_investment, confidence_level):
+    """
+    DF: dataframe(dataframe contains date, Adj-Close-price and Log-return)
+    observed_days type: int(observed days)
+    initial investment type: int(how much capital is invested)
+    confidence_level type: float(confidence_level for VaR)
+    output type: dataframe(dataframe contains date, price, log-return and historical-var)
+    """
+
+    for index in range(observed_days - 1, len(DF)):
+        DF.loc[index, 'VaR'] = DF.loc[index, 'Adj Close'] * (1 - np.exp(np.percentile(
+            DF['Log Return'][index - observed_days + 1:index], (1 - confidence_level) * 100)))
+        DF.loc[index, 'VaR for given investment'] = (DF.loc[index, 'VaR']/(DF.loc[index, 'Adj Close']))*initial_investment
+    # drop the rows for null value
+    DF.dropna(inplace=True)
+    DF.reset_index(inplace=True, drop=True)
+    pd.set_option('display.max_columns', None)
+
+    return DF
+
+# use the Chi-Square goodness-of-fit test to back-test the VaR model
+def backtest_var(data_var, confidence_level, confidence_level_chi2):
+    """
+    data type: dataframe(dataframe contains date, Adj-Close-price, Log-return, volatilities and VaR)
+    confidence_level type: float(confidence_interval for VaR)
+    confidence_level_chi2 type: float(confidence_interval for chi-squared test)
+    output type: dictionary(dictionary contains chi-squred test results)
+    """
+    # calculate the number of exceed observations
+    exceed_num = len(
+        data_var[(data_var['Adj Close'].shift(1) - data_var['Adj Close']) > data_var['VaR']])
+    # calculate the total observations
+    total_num = len(data_var) - 1
+    # calculate the test statistics
+    test_statistics = 2 * (np.log((exceed_num / total_num)**exceed_num * (1 - exceed_num / total_num)**(
+        total_num - exceed_num)) - np.log((1 - confidence_level)**exceed_num * confidence_level**(total_num - exceed_num)))
+    # calculate the chi-squared statistics
+    chi_squared_statistics = chi2.ppf(confidence_level_chi2, 1)
+
+    # create the dictionnary to diaplay the results
+    test_result = {}
+    test_result['VaR Confidence-level'] = confidence_level
+    test_result['Chi2 Confidence-level'] = confidence_level_chi2
+    test_result['Exceed Num'] = exceed_num
+    test_result['Total Num'] = total_num
+    test_result['Test Statistics'] = test_statistics
+    test_result['Chi-squared Statistics'] = chi_squared_statistics
+    if test_statistics < chi_squared_statistics:
+        test_result['Null Hypothesis'] = 'Accept'
+    else:
+        test_result['Null Hypothesis'] = 'Reject'
+
+    return test_result
+
+# this is the main function
+def main_var(tickers, weights,initial_investment, method, observed_days, decay_factor, confidence_level, confidence_level_chi2):
+    """
+    tickers type: str(list of the name of the tickers)
+    weights type: float[list of the weights assigned to the tickers]
+    initial investment type: int(how much capital is invested)
+    method type: str(name of the method to calculate VaR)
+    observed_days type: int(observed days)
+    decay_factor type: float(decay factor)
+    confidence_level type: float(confidence_level for VaR)
+    confidence_level_chi2 type: float(confidence_interval for chi-squared test)
+    output type: print results
+    """
+    
+    
+    data = pdr.get_data_yahoo(tickers, start=dt.date.today()-dt.timedelta(1825), end=dt.date.today())['Adj Close']
+    ret_data = data.pct_change()
+    log_ret_data = np.log(1 + ret_data)
+    ret_data = ret_data.dropna()
+
+    weighted_returns = (weights * ret_data)
+    portfolio_returns = pd.DataFrame()
+    portfolio_returns['Adj Close'] = data.sum(axis=1)
+    portfolio_returns['Log Return'] = weighted_returns.sum(axis=1)
+    portfolio_returns.dropna(inplace=True)
+    portfolio_returns.reset_index(inplace=True, drop=False)
+    
+    # portfolio_returns.sort_values(axis = 1,ascending=False, inplace=True)
+    DF = portfolio_returns
+
+    # monte carlo simulation method and back-testing
+    if method == 'Monte Carlo Simulation':
+        print('\nMonte Carlo Simulation')
+        print('------------------------\n')
+
+        var = mc_simulation_var(DF, observed_days, initial_investment, 
+                                decay_factor, confidence_level)
+        print('\nDisplay Daily VaR\n')
+        print(var.tail())
+        
+        backtest_result = backtest_var(
+            var, confidence_level, confidence_level_chi2)
+        print('\nDisplay Backtest Result\n')
+        print(backtest_result)
+
+    # parametric method and back-testing
+    if method == 'Parametric Method':
+        print('\nParametric Method')
+        print('------------------------\n')
+
+        var = parametric_var(
+            DF, observed_days, initial_investment, decay_factor, confidence_level)
+        print('\nDisplay First Five Daily VaR\n')
+        print(var.tail())
+
+        backtest_result = backtest_var(
+            var, confidence_level, confidence_level_chi2)
+        print('\nDisplay Backtest Result\n')
+        print(backtest_result)
+
+    # historic method and back-testing
+    if method == 'Historical Method':
+        print('\nHistorical Method')
+        print('------------------------\n')
+
+        var = historical_var(DF, observed_days, initial_investment, confidence_level)
+        print('\nDisplay First Five Daily VaR\n')
+        print(var.tail())
+
+        backtest_result = backtest_var(
+            var, confidence_level, confidence_level_chi2)
+        print('\nDisplay Backtest Result\n')
+        print(backtest_result)
+
+main_var(['RELIANCE.NS','HDFCBANK.BO', 'INFY.BO', 'HINDUNILVR.BO'], np.array([.25, .3, .15, .3]),1000000, 'Monte Carlo Simulation', 22, 0.94, 0.99, 0.95)
+
+
+
