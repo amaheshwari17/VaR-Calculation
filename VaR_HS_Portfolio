@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Jul 24 15:24:35 2020
+
+@author: aayush
+"""
+
+#Import necessary libraries
+import pandas as pd
+from pandas_datareader import data as pdr
+import numpy as np
+import datetime as dt
+
+#Data fetching
+import yfinance as yf
+
+#Plotting
+import matplotlib.pyplot as plt
+import seaborn
+import matplotlib.mlab as mlab
+
+#Statistical Calculation
+from scipy.stats import norm
+
+#Tabular data output
+from tabulate import tabulate
+
+#Create our portfolio of equities
+tickers = ['RELIANCE.NS','HDFCBANK.BO', 'INFY.BO', 'HINDUNILVR.BO']
+
+#Set the investment weights (I arbitrarily picked for example)
+weights = np.array([.25, .3, .15, .3])
+
+#Calculating Daily Returns
+data = pdr.get_data_yahoo(tickers, start=dt.date.today()-dt.timedelta(1825), end=dt.date.today())['Adj Close']
+
+data['Adj Close Combined'] =  data.iloc[:, 0:4].dot(weights.T)  #creating portfolio Adj Close Price
+
+#From the closing prices, calculate periodic returns
+data['Returns'] = data['Adj Close Combined'].pct_change()
+
+df = pd.DataFrame()
+df['Returns'] = data['Returns'].dropna()
+
+#Mean and Standard Deviation
+mean = np.mean(df['Returns'])
+std_dev = np.std(df['Returns'])
+
+df['Returns'].hist(bins = 40, normed = True, histtype = 'stepfilled', alpha = 0.5)
+x = np.linspace(mean - 3*std_dev, mean + 3*std_dev, 100)
+plt.xlabel('Returns')
+plt.ylabel('Frequency')
+plt.grid(True)
+plt.plot(x, norm.pdf(x, mean, std_dev), "r")
+plt.show()
+
+#Sorting Daily Returns
+df.sort_values('Returns', inplace = True, ascending = True)
+
+#Calculating VaR
+VaR_90 = df['Returns'].quantile(0.1)
+VaR_95 = df['Returns'].quantile(0.05)
+VaR_99 = df['Returns'].quantile(0.01)
+
+print (tabulate([['90%', VaR_90], ['95%', VaR_95], ['99%', VaR_99]], headers = ['Confidence level', 'Value at Risk']))
+
+
