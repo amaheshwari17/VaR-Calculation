@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Jul 27 14:50:56 2020
+
+@author: aayush
+"""
+
+#import necessary libraries
+import pandas as pd
+import numpy as np
+from pandas_datareader import data as pdr
+import datetime as dt
+import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings('ignore')
+
+
+"""
+Geometric Brownian Motion: Markov process, meaning stock price follows a random walk and is consistent with (at the very least) 
+the weak form of the efficient market hypothesis (EMH)—past price information is already incorporated, 
+and the next price movement is "conditionally independent" of past price movements.
+
+change in S = (expected mean * Stock Price * Time Period) + 
+(volatility of stock * epsilon = Random number generated from the standard normal distribution* Stock Price * Sqrt(Time Period) )
+
+"""
+def simulate_GBM(timerange, step_size, number_of_steps, mu, sigma, current_price, VaR_Percentage, show_plot=False):
+    forwardpatharray = np.array([[]])
+    closeprices = np.array([])
+    del_t = timerange/step_size
+    for path in range(number_of_steps):
+        futurepricelist = np.array([np.float(current_price)])
+        for i in range(step_size):
+            epsilon = np.random.normal(0, 1)  #generating random number from the standard normal distribution
+            S = futurepricelist[-1]
+            del_S = mu*S*del_t + sigma*epsilon*S*(np.sqrt(del_t))
+            new_S = S + del_S
+            futurepricelist = np.append(futurepricelist, new_S)     #adding prices to the list
+
+        if forwardpatharray.shape[1] == 0:
+            forwardpatharray = np.array([futurepricelist])
+        else:
+            forwardpatharray = np.concatenate((forwardpatharray, np.array([futurepricelist])), axis=0)
+
+        closeprices = np.append(closeprices, futurepricelist[-1])
+
+    if show_plot:
+        for i in range(forwardpatharray.shape[0]): 
+            plt.plot(forwardpatharray[i])
+        plt.xlabel('Time')
+        plt.ylabel('Price')
+        plt.title('Monte Carlo_GBM')
+        plt.show()
+
+    VaR = current_price - np.percentile(closeprices, 100 - VaR_Percentage)  #defining VaR
+    VaR_in_Perc = round(((-VaR/current_price)*100),4)
+    return VaR_in_Perc
+
+
+#Defining Main Function 
+
+def main_var(tickers, weights, initial_investment, VaR_Percentage):
+    
+    data = pdr.get_data_yahoo(tickers, start=dt.date.today()-dt.timedelta(500), end=dt.date.today())['Adj Close']
+    ret_data = data.pct_change()
+    log_ret_data = np.log(1 + ret_data)
+    ret_data = ret_data.dropna()
+    
+    weighted_returns = (weights * ret_data)
+    portfolio_returns = pd.DataFrame()
+    portfolio_returns['Adj Close'] = data.sum(axis=1)
+    portfolio_returns['Log Return'] = weighted_returns.sum(axis=1)
+    
+    VaR1 = simulate_GBM(1, len(portfolio_returns), 100, np.mean(portfolio_returns['Log Return']), np.std(portfolio_returns['Log Return']), portfolio_returns['Adj Close'][-1], VaR_Percentage, True)
+    print(f'Estimated VaR: {VaR1} %')
+    
+    VaR_Investment = VaR1 * (initial_investment/100)
+    print(f'Estimated VaR of the Portfolio: {VaR_Investment}')
+
+#Provide Values Below
+t = ['RELIANCE.NS','HDFCBANK.BO', 'INFY.BO', 'HINDUNILVR.BO']  #tickers
+w = np.array([.25, .3, .15, .3])                               #weights
+i = 1000000                                                    #investment
+v = 1                                                          #confidence level
+
+#Calling main function
+main_var(t, w, i, v)
