@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Sun Jul 26 17:02:22 2020
-
 @author: aayush
 """
 
@@ -86,7 +84,6 @@ def parametric_var(data, observed_days, initial_investment, decay_factor, confid
 
 
 # based on historical returns over some past observation period
-# no distributional hypothesis
 def historical_var(DF, observed_days, initial_investment, confidence_level):
     """
     DF: dataframe(dataframe contains date, Adj-Close-price and Log-return)
@@ -107,42 +104,13 @@ def historical_var(DF, observed_days, initial_investment, confidence_level):
 
     return DF
 
-# use the Chi-Square goodness-of-fit test to back-test the VaR model
-def backtest_var(data_var, confidence_level, confidence_level_chi2):
-    """
-    data type: dataframe(dataframe contains date, Adj-Close-price, Log-return, volatilities and VaR)
-    confidence_level type: float(confidence_interval for VaR)
-    confidence_level_chi2 type: float(confidence_interval for chi-squared test)
-    output type: dictionary(dictionary contains chi-squred test results)
-    """
-    # calculate the number of exceed observations
-    exceed_num = len(
-        data_var[(data_var['Adj Close'].shift(1) - data_var['Adj Close']) > data_var['VaR']])
-    # calculate the total observations
-    total_num = len(data_var) - 1
-    # calculate the test statistics
-    test_statistics = 2 * (np.log((exceed_num / total_num)**exceed_num * (1 - exceed_num / total_num)**(
-        total_num - exceed_num)) - np.log((1 - confidence_level)**exceed_num * confidence_level**(total_num - exceed_num)))
-    # calculate the chi-squared statistics
-    chi_squared_statistics = chi2.ppf(confidence_level_chi2, 1)
+# Backtesting Function
 
-    # create the dictionnary to diaplay the results
-    test_result = {}
-    test_result['VaR Confidence-level'] = confidence_level
-    test_result['Chi2 Confidence-level'] = confidence_level_chi2
-    test_result['Exceed Num'] = exceed_num
-    test_result['Total Num'] = total_num
-    test_result['Test Statistics'] = test_statistics
-    test_result['Chi-squared Statistics'] = chi_squared_statistics
-    if test_statistics < chi_squared_statistics:
-        test_result['Null Hypothesis'] = 'Accept'
-    else:
-        test_result['Null Hypothesis'] = 'Reject'
 
-    return test_result
+
 
 # this is the main function
-def main_var(tickers, weights,initial_investment, method, observed_days, decay_factor, confidence_level, confidence_level_chi2):
+def main_var(tickers, weights,initial_investment, method, observed_days, decay_factor, confidence_level):
     """
     tickers type: str(list of the name of the tickers)
     weights type: float[list of the weights assigned to the tickers]
@@ -151,10 +119,8 @@ def main_var(tickers, weights,initial_investment, method, observed_days, decay_f
     observed_days type: int(observed days)
     decay_factor type: float(decay factor)
     confidence_level type: float(confidence_level for VaR)
-    confidence_level_chi2 type: float(confidence_interval for chi-squared test)
     output type: print results
     """
-    
     
     data = pdr.get_data_yahoo(tickers, start=dt.date.today()-dt.timedelta(1825), end=dt.date.today())['Adj Close']
     ret_data = data.pct_change()
@@ -168,10 +134,9 @@ def main_var(tickers, weights,initial_investment, method, observed_days, decay_f
     portfolio_returns.dropna(inplace=True)
     portfolio_returns.reset_index(inplace=True, drop=False)
     
-    # portfolio_returns.sort_values(axis = 1,ascending=False, inplace=True)
     DF = portfolio_returns
 
-    # monte carlo simulation method and back-testing
+    # monte carlo simulation method 
     if method == 'Monte Carlo Simulation':
         print('\nMonte Carlo Simulation')
         print('------------------------\n')
@@ -180,13 +145,8 @@ def main_var(tickers, weights,initial_investment, method, observed_days, decay_f
                                 decay_factor, confidence_level)
         print('\nDisplay Daily VaR\n')
         print(var.tail())
-        
-        backtest_result = backtest_var(
-            var, confidence_level, confidence_level_chi2)
-        print('\nDisplay Backtest Result\n')
-        print(backtest_result)
 
-    # parametric method and back-testing
+    # parametric method
     if method == 'Parametric Method':
         print('\nParametric Method')
         print('------------------------\n')
@@ -196,12 +156,7 @@ def main_var(tickers, weights,initial_investment, method, observed_days, decay_f
         print('\nDisplay First Five Daily VaR\n')
         print(var.tail())
 
-        backtest_result = backtest_var(
-            var, confidence_level, confidence_level_chi2)
-        print('\nDisplay Backtest Result\n')
-        print(backtest_result)
-
-    # historic method and back-testing
+    # historic method 
     if method == 'Historical Method':
         print('\nHistorical Method')
         print('------------------------\n')
@@ -210,15 +165,12 @@ def main_var(tickers, weights,initial_investment, method, observed_days, decay_f
         print('\nDisplay First Five Daily VaR\n')
         print(var.tail())
 
-        backtest_result = backtest_var(
-            var, confidence_level, confidence_level_chi2)
-        print('\nDisplay Backtest Result\n')
-        print(backtest_result)
 
+#Calling main function
 main_var(['RELIANCE.NS','HDFCBANK.BO', 'INFY.BO', 'HINDUNILVR.BO'], np.array([.25, .3, .15, .3]),1000000, 'Monte Carlo Simulation', 22, 0.94, 0.99, 0.95)
 
 
 
 """
-Historical Simulation is not accurate. For that, I have written another code in this same repository. Kindly refer to that. Thanks!
+Historical Simulation is not accurate. 
 """
