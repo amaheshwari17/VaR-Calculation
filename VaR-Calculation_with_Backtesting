@@ -213,8 +213,3 @@ def main_var(tickers, weights,initial_investment, method, observed_days, decay_f
         print(backtest_result)
 
 main_var(['RELIANCE.NS','HDFCBANK.BO', 'INFY.BO', 'HINDUNILVR.BO'], np.array([.25, .3, .15, .3]),1000000, 'Monte Carlo Simulation', 22, 0.94, 0.99, 0.95)
-
-
-"""
-Historical Simulation is not accurate. 
-"""
